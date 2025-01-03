@@ -7,9 +7,10 @@ use bevy::tasks::futures_lite::StreamExt;
 use settings::{BRIGHT_CELL_COLOR, BRIGHT_CELL_SELECTION_COLOR, DARK_CELL_COLOR, OCCUPIED_COLOR_PLAYER_1, OCCUPIED_COLOR_PLAYER_2, UNOCCUPIED_SLOT_COLOR};
 use crate::settings::{CELL_SIZE, GRID_HEIGHT, GRID_WIDTH};
 pub mod settings;
-mod check_win_condition;
+mod win_condition_module;
 
 use itertools::iproduct;
+use crate::win_condition_module::check_all_directions;
 
 fn main() {
     App::new()
@@ -17,13 +18,15 @@ fn main() {
         .insert_resource(SelectedColumn{column: 0})
         .insert_resource(ActivePlayer{player: Player::Player1})
         .add_systems(Startup, (setup, setup_plot))
-        .add_systems(Update, (process_selected_column, process_occupy_slot, check_win_condition))
+        .add_systems(Update, (process_selected_column, process_occupy_slot, win_condition_outer_loop))
         .run();
 }
 
 
 #[derive(Event, Default)]
-struct GameOverEvent;
+struct GameOverEvent{
+    iterator:
+}
 
 #[derive(Resource)]
 struct SelectedColumn {
@@ -143,23 +146,16 @@ fn get_player(slots_query: &Query<(&Slot)>, column: i8, row: i8) -> Option<Playe
         .map(|slot| slot.player.clone())? // Map to the player, if found
 }
 
-fn check_win_condition(query: Query<(&Slot)>){
-    let mut game_over = false;
+fn win_condition_outer_loop(query: Query<(&Slot)>){
+    // let mut game_over = false;
+    let mut win_condition = None;;
     for (column, row) in iproduct!(0..GRID_WIDTH, 0..GRID_HEIGHT){
-        let mut primary_player = get_player(&query, column, row);
-        if primary_player.is_none(){
-            continue
-        }
-        if check_win_condition::check_vertical(&query, column, row, &mut primary_player) ||
-            check_win_condition::check_horizontal(&query, column, row, &mut primary_player) ||
-            check_win_condition::check_diagonal_up_right(&query, column, row, &mut primary_player) ||
-            check_win_condition::check_diagonal_down_right(&query, column, row, &mut primary_player){
-            game_over = true;
+
+        win_condition = check_all_directions(&query, column, row);
+        if win_condition.is_some(){
+            println!("THE GAME IS SO OVER");
             break
         }
-    }
-    if game_over{
-        println!("The game has ended!!")
     }
 }
 
