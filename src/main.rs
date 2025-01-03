@@ -2,30 +2,31 @@ use std::fmt;
 use bevy::app::Startup;
 use bevy::DefaultPlugins;
 use bevy::input::keyboard::KeyboardInput;
-use bevy::prelude::{App, Camera2d, Color, Commands, Component, default, Event, EventReader, KeyCode, Query, Res, ResMut, Resource, Sprite, Transform, Update, Vec2, Vec3, Window};
+use bevy::prelude::{App, Camera2d, Color, Commands, Component, default, Event, EventReader, EventWriter, KeyCode, Query, Res, ResMut, Resource, Sprite, Transform, Update, Vec2, Vec3, Window};
 use bevy::tasks::futures_lite::StreamExt;
 use settings::{BRIGHT_CELL_COLOR, BRIGHT_CELL_SELECTION_COLOR, DARK_CELL_COLOR, OCCUPIED_COLOR_PLAYER_1, OCCUPIED_COLOR_PLAYER_2, UNOCCUPIED_SLOT_COLOR};
-use crate::settings::{CELL_SIZE, GRID_HEIGHT, GRID_WIDTH};
+use crate::settings::{CELL_SIZE, GRID_HEIGHT, GRID_WIDTH, WINNING_CELL_COLOR};
 pub mod settings;
 mod win_condition_module;
+mod cell_and_slot;
 
 use itertools::iproduct;
-use crate::win_condition_module::check_all_directions;
+use crate::win_condition_module::get_winning_positions;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_event::<GameOverEvent>()
         .insert_resource(SelectedColumn{column: 0})
         .insert_resource(ActivePlayer{player: Player::Player1})
         .add_systems(Startup, (setup, setup_plot))
-        .add_systems(Update, (process_selected_column, process_occupy_slot, win_condition_outer_loop))
+        .add_systems(Update, (process_selected_column, process_occupy_slot, check_game_for_win_condition, process_win_condition))
         .run();
 }
 
-
 #[derive(Event, Default)]
 struct GameOverEvent{
-    iterator:
+    winning_positions: Vec<(i8, i8)>
 }
 
 #[derive(Resource)]
@@ -58,7 +59,6 @@ struct ActivePlayer {
 
 fn setup(mut commands: Commands){
     commands.spawn(Camera2d);
-    // plot_grid(commands, query, selected_column);
 }
 
 
@@ -67,6 +67,7 @@ fn process_selected_column(
     mut key_event: EventReader<KeyboardInput>,
     mut query: Query<(&mut Cell, &mut Sprite)>,
 ) {
+    // TODO: Implement the function that returns keycode as option
     for event in key_event.read() {
         if !event.state.is_pressed() { return }
         let key_code = event.key_code;
@@ -83,7 +84,10 @@ fn process_selected_column(
 
     // Update the color of the cells based on the selected column
     for (mut cell, mut sprite) in query.iter_mut() {
-        if cell.column == selected_column.column {
+        if cell.winning_cell{
+            sprite.color = WINNING_CELL_COLOR;
+        }
+        else if cell.column == selected_column.column {
             sprite.color = BRIGHT_CELL_SELECTION_COLOR; // Change to green for selected column
         } else if (cell.column + cell.row) % 2 == 0 {
             sprite.color = BRIGHT_CELL_COLOR;
@@ -140,25 +144,36 @@ fn process_occupy_slot(
     }
 }
 
-fn get_player(slots_query: &Query<(&Slot)>, column: i8, row: i8) -> Option<Player>{
+fn get_player(slots_query: &Query<(&Slot)>, column: &i8, row: &i8) -> Option<Player>{
     slots_query.iter()
-        .find(|slot| slot.column == column && slot.row == row) // Find matching Slot
+        .find(|slot| &slot.column == column && &slot.row == row) // Find matching Slot
         .map(|slot| slot.player.clone())? // Map to the player, if found
 }
 
-fn win_condition_outer_loop(query: Query<(&Slot)>){
-    // let mut game_over = false;
-    let mut win_condition = None;;
+fn check_game_for_win_condition(query: Query<(&Slot)>, mut event_writer: EventWriter<GameOverEvent>){
     for (column, row) in iproduct!(0..GRID_WIDTH, 0..GRID_HEIGHT){
-
-        win_condition = check_all_directions(&query, column, row);
-        if win_condition.is_some(){
-            println!("THE GAME IS SO OVER");
+        let positions = get_winning_positions(&query, column, row);
+        if let Some(winning_positions) = positions {
+            event_writer.send(GameOverEvent{winning_positions});
             break
         }
     }
 }
 
+
+fn process_win_condition(mut event_reader: EventReader<GameOverEvent>,  mut query: Query<(&mut Cell, &mut Sprite)>,){
+    if !event_reader.is_empty(){
+        for event in event_reader.read(){
+            let (columns, rows): (Vec<i8>, Vec<i8>) = event.winning_positions.iter().cloned().unzip();
+            for (mut cell, mut sprite) in query.iter_mut(){
+                if columns.contains(&cell.column) && rows.contains(&cell.row){
+                    cell.winning_cell = true;
+                    sprite.color = WINNING_CELL_COLOR;
+                }
+            }
+        }
+    }
+}
 
 #[derive(Component)]
 struct Cell{
