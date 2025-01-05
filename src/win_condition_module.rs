@@ -1,8 +1,9 @@
 use bevy::prelude::Query;
 use itertools::izip;
-use crate::{get_player, Player, Slot};
+use crate::{get_player, Player};
 use strum_macros::EnumIter;
 use strum::IntoEnumIterator;
+use crate::cell_and_slot::Slot;
 
 
 #[derive(EnumIter)]
